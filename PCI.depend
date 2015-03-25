@@ -1,0 +1,18 @@
+# depslib dependency file v1.0
+1427269322 source:/home/rufus/c/codeblocks projects/PCI/main.cpp
+	<iostream>
+	<stdio.h>
+	<unistd.h>
+	<sys/io.h>
+	<errno.h>
+	<math.h>
+	<limits>
+	<algorithm>
+	<functional>
+	<iomanip>
+	<cstring>
+	<bitset>
+	"pci_codes.h"
+
+1427212955 /home/rufus/c/codeblocks projects/PCI/pci_codes.h
+
