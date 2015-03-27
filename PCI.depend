@@ -16,3 +16,20 @@
 
 1427212955 /home/rufus/c/codeblocks projects/PCI/pci_codes.h
 
+1427479197 source:/home/rufus/Documents/codeBlocks/PCI_CODE_BLOCKS/main.cpp
+	<iostream>
+	<stdio.h>
+	<unistd.h>
+	<sys/io.h>
+	<errno.h>
+	<math.h>
+	<limits>
+	<algorithm>
+	<functional>
+	<iomanip>
+	<cstring>
+	<bitset>
+	"pci_codes.h"
+
+1427467733 /home/rufus/Documents/codeBlocks/PCI_CODE_BLOCKS/pci_codes.h
+

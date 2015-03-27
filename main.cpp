@@ -14,7 +14,7 @@
 #include "pci_codes.h"
 
 #define CONFIG_ADDRESS	0x0CF8
-#define CONFIG_DATA	0x0CFC
+#define CONFIG_DATA	    0x0CFC
 
 
 
@@ -114,12 +114,12 @@ ulong toConfAddrReg(ulong bus,ulong device,ulong func,ulong reg_index)
 }
 
 
-PCI_DEVTABLE* devName(ulong devId)
+PCI_DEVTABLE* devName(ulong devId,ulong venId)
 {   //поиск по таблице имени устройства
     auto p = std::begin(PciDevTable);
 
-	p = std::find_if(std::begin(PciDevTable),std::end(PciDevTable),[&devId](PCI_DEVTABLE& el){
-					return el.DevId == devId; });
+	p = std::find_if(std::begin(PciDevTable),std::end(PciDevTable),[&devId,&venId](PCI_DEVTABLE& el){
+					return el.DevId == devId && el.VenId == venId; });
 
 	if(p == std::end(PciDevTable))
 		throw string("unspecified device");
@@ -137,13 +137,21 @@ PCI_VENTABLE* vendorName(ulong venId)
     return it;
 }
 
-PCI_CLASSCODETABLE* devClass(ulong baseClass,ulong subClass){
+PCI_CLASSCODETABLE* devClass(ulong baseClass,ulong subClass, ulong progInterface){
     //поиск по табл класса устройства
     auto it = std::begin(PciClassCodeTable);
     it = std::find_if(std::begin(PciClassCodeTable),std::end(PciClassCodeTable),
-                    [&baseClass,&subClass](PCI_CLASSCODETABLE &el){
-                    return ( el.BaseClass == baseClass && el.SubClass == subClass );
+                    [&baseClass,&subClass,&progInterface](PCI_CLASSCODETABLE &el){
+                    return ( el.BaseClass == baseClass && el.SubClass == subClass && el.ProgIf == progInterface);
                     ;});
+    if(it == std::end(PciClassCodeTable))
+    {
+        //попробовать поиск без учёта программного интерфейса
+        it = std::find_if(std::begin(PciClassCodeTable),std::end(PciClassCodeTable),
+                    [&baseClass,&subClass](PCI_CLASSCODETABLE &el){
+                    return ( el.BaseClass == baseClass && el.SubClass == subClass);
+                    ;});
+    }
     if(it == std::end(PciClassCodeTable))
         throw string("unspecified device class");
     return it;
@@ -158,39 +166,39 @@ void showDevConfBlock(ulong bus,ulong dev,ulong func)
 //    SubsystemVendorId
 
     //чтение 0-ого рег (deviceId,vendorId)
-    outl(toConfAddrReg(bus,dev,func,0x00),CONFIG_ADDRESS);
-    ulong reg_0x00 = inl(CONFIG_DATA);
+    outl_p(toConfAddrReg(bus,dev,func,0),CONFIG_ADDRESS);
+    ulong reg_0 = inl(CONFIG_DATA);
 
-    ulong vendorId = _mask.word(reg_0x00,0);
+    ulong vendorId = _mask.word(reg_0,0);
     //проверка существования устройства
     if(vendorId == numeric_limits<unsigned short>::max() ||
        vendorId == 0)
-    {        return;}
+        return;
 
-    ulong deviceId = _mask.word(reg_0x00,1);
-
+    ulong deviceId = _mask.word(reg_0,1);
 
     //чтение RevisionId, ClassId
-    outl(toConfAddrReg(bus,dev,func,0x08),CONFIG_ADDRESS);
-    ulong reg_0x08 = inl(CONFIG_DATA);
+    outl_p(toConfAddrReg(bus,dev,func,2),CONFIG_ADDRESS);
+    ulong reg_2 = inl_p(CONFIG_DATA);
 
-    ulong revisionId = _mask.byte(reg_0x08,0);
 
-    ulong baseClassCode = _mask.byte(reg_0x08,3);
-    ulong subClassCode = _mask.byte(reg_0x08,2);
-    ulong progInterface = _mask.byte(reg_0x08,1);
+    ulong revisionId = _mask.byte(reg_2,0);
 
+    ulong baseClassCode = _mask.byte(reg_2,3);
+    ulong subClassCode = _mask.byte(reg_2,2);
+    ulong progInterface = _mask.byte(reg_2,1);
 
     //чтение subsystemVendorId
-    outl(toConfAddrReg(bus,dev,func,0x2C),CONFIG_ADDRESS);
-    ulong reg_0x2C = inl(CONFIG_DATA);
+    outl_p(toConfAddrReg(bus,dev,func,6),CONFIG_ADDRESS);
+    ulong reg_6 = inl_p(CONFIG_DATA);
 
-    ulong subVenId = _mask.word(reg_0x2C,0);
+    ulong subVenId = _mask.word(reg_6,0);
 
 
     //hex вывод
     cout.unsetf(ios::dec);
     cout.setf(ios::hex | ios::uppercase);
+
     cout<<endl;
     //вывод адреса устройства (номер шины:устройства:функции)
     cout<<"device address: bus "<<bus<<" device "<<dev<<" function "<<func<<endl;
@@ -214,14 +222,14 @@ void showDevConfBlock(ulong bus,ulong dev,ulong func)
 
     try{
     //название устройства
-    auto devRow = devName(deviceId);
+    auto devRow = devName(deviceId,vendorId);
     cout<<"device name: "<<devRow->Chip<<" "<<devRow->ChipDesc<<endl;
     }catch(string& e){cout<<e<<endl;}
 
     try{
     //класс устройства
-    auto classRow = devClass(baseClassCode,subClassCode);
-    cout<<"device class: "<<classRow->BaseDesc<<"  "<<subClassCode<<endl;
+    auto classRow = devClass(baseClassCode,subClassCode,progInterface);
+    cout<<"device class: "<<classRow->BaseDesc<<"  "<<classRow->SubDesc<<"  "<<classRow->ProgDesc<<endl;
     }catch(string& e){cout<<e<<endl;}
 
 
@@ -232,24 +240,16 @@ void showDevConfBlock(ulong bus,ulong dev,ulong func)
 
 int main()
 {
-	//отрываем порт адреса
-	if(ioperm(CONFIG_ADDRESS,8,1) == -1)
-	{
-		perror("ioperm");
-	}
-	else printf("permission is given: %X\n",CONFIG_ADDRESS);
-
-	//открываем порт данных
-	if(ioperm(CONFIG_DATA,8,1) == -1)
-	{
-		perror("ioperm");
-	}
-	else printf("permission is given: %X\n",CONFIG_DATA);
+    //разрешение доступа ко всем портам
+    if(iopl(3) == -1 )
+        perror("ioperm");
+    //cout<<_nBus<<" "<<_nDev<<" "<<_nFunc<<" "<<_nReg<<endl;
+    //_bin(toConfAddrReg(0,3,0,0));
 
     //проходим по всем возможным устроствам
     for(size_t i = 0;i < _nBus;i++)
         for(size_t j = 0; j < _nDev;j++)
-            for(size_t k = 0;k < _nFunc;k++)
+           for(size_t k = 0;k < _nFunc;k++)
                 showDevConfBlock(i,j,k);
 
     cout<<endl;
